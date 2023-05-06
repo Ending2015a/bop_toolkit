@@ -201,6 +201,26 @@ def re(R_est, R_gt):
   error = 180.0 * error / np.pi  # Convert [rad] to [deg].
   return error
 
+def re_sym(R_est, R_gt, syms):
+  """Rotational Error.
+
+  :param R_est: 3x3 ndarray with the estimated rotation matrix.
+  :param R_gt: 3x3 ndarray with the ground-truth rotation matrix.
+  :return: The calculated error.
+  """
+  assert R_est.shape == R_gt.shape == (3, 3)
+  es = []
+  for sym in syms:
+    R_gt_sym = R_gt.dot(sym["R"])
+    rotation_diff = np.dot(R_est, R_gt_sym.T)
+    trace = np.trace(rotation_diff)
+    trace = trace if trace <= 3 else 3
+    # Avoid invalid values due to numerical errors
+    error_cos = min(1.0, max(-1.0, 0.5 * (trace - 1.0)))
+    rd_deg = np.rad2deg(np.arccos(error_cos))
+    es.append(rd_deg)
+
+  return min(es)
 
 def te(t_est, t_gt):
   """Translational Error.
@@ -213,6 +233,24 @@ def te(t_est, t_gt):
   error = np.linalg.norm(t_gt - t_est)
   return error
 
+def te_sym(t_est, t_gt, R_gt, syms):
+  """Translational Error.
+
+  :param t_est: 3x1 ndarray with the estimated translation vector.
+  :param t_gt: 3x1 ndarray with the ground-truth translation vector.
+  :return: The calculated error.
+  """
+  t_est = t_est.flatten()
+  t_gt = t_gt.flatten()
+  assert t_est.size == t_gt.size == 3
+  es = []
+  for sym in syms:
+    # yapf: disable
+    t_gt_sym = R_gt.dot(sym["t"]).reshape(3,) + t_gt
+    # yapf: enable
+    error = np.linalg.norm(t_gt_sym - t_est)
+    es.append(error)
+  return min(es)
 
 def proj(R_est, t_est, R_gt, t_gt, K, pts):
   """Average distance of projections of object model vertices [px]
@@ -231,6 +269,19 @@ def proj(R_est, t_est, R_gt, t_gt, K, pts):
   e = np.linalg.norm(proj_est - proj_gt, axis=1).mean()
   return e
 
+def arp_2d_sym(R_est, t_est, R_gt, r_gt, K, pts, syms):
+  """# NOTE: the same as proj average re-projection error in 2d.
+  Copied from gdrnpp
+  """
+  pts_est_2d = transform_pts_Rt_2d(pts, R_est, t_est, K)
+  es = []
+  for sym in syms:
+    R_gt_sym = R_gt.dot(sym["R"])
+    t_gt_sym = R_gt.dot(sym["t"]) + t_gt
+    pts_gt_2d_sym = transform_pts_Rt_2d(pts, R_gt_sym, t_gt_sym, K)
+    e = np.linalg.norm(pts_est_2d - pts_gt_2d_sym, axis=1).mean()
+    es.append(e)
+  return min(es)
 
 def cou_mask(mask_est, mask_gt):
   """Complement over Union of 2D binary masks.
@@ -328,3 +379,25 @@ def cou_bb_proj(R_est, t_est, R_gt, t_gt, K, renderer, obj_id):
 
   e = 1.0 - misc.iou(bb_est, bb_gt)
   return e
+
+
+#######################################################################
+
+def transform_pts_Rt_2d(pts, R, t, K):
+  """Applies a rigid transformation to 3D points.
+
+  :param pts: nx3 ndarray with 3D points.
+  :param R: 3x3 rotation matrix.
+  :param t: 3x1 translation vector.
+  :param K: 3x3 intrinsic matrix
+  :return: nx2 ndarray with transformed 2D points.
+  """
+  assert pts.shape[1] == 3
+  pts_t = R.dot(pts.T) + t.reshape((3, 1))  # 3xn
+  pts_c_t = K.dot(pts_t)
+  n = pts.shape[0]
+  pts_2d = np.zeros((n, 2))
+  pts_2d[:, 0] = pts_c_t[0, :] / pts_c_t[2, :]
+  pts_2d[:, 1] = pts_c_t[1, :] / pts_c_t[2, :]
+
+  return pts_2d
