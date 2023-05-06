@@ -15,11 +15,20 @@ from scipy.spatial import distance
 from bop_toolkit_lib import transform
 
 
+QUIET = 0
+
+def set_quiet(quiet):
+  global QUIET
+  QUIET = quiet
+
 def log(s):
   """A logging function.
 
   :param s: String to print (with the current date and time).
   """
+  global QUIET
+  if QUIET > 0:
+    return
   # Use UTC time for logging.
   utc_now = pytz.utc.localize(datetime.datetime.utcnow())
   # pst_now = utc_now.astimezone(pytz.timezone("America/Los_Angeles"))
